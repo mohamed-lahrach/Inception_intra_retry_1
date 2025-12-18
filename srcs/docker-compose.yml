@@ -54,13 +54,13 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /home/mlahrach/data/mariadb
+      device: ${HOME}/data/mariadb
   volume_wordpress:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /home/mlahrach/data/wordpress
+      device: ${HOME}/data/wordpress
 secrets:
   mariadb_root_password:
     file: ../secrets/mariadb_root_password.txt
