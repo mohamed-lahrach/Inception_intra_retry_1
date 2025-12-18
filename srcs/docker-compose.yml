@@ -1,0 +1,70 @@
+# Docker Compose configuration
+services:
+  nginx:
+    build: ./requirements/nginx
+    container_name: nginx
+    image: nginx
+    ports:
+      - "443:443"
+    restart: always 
+    depends_on:
+      - wordpress
+    networks:
+      - inception_network
+    env_file:
+      - .env
+    volumes:
+      - volume_wordpress:/var/www/wordpress
+  wordpress:
+    build: ./requirements/wordpress
+    container_name: wordpress
+    image: wordpress
+    depends_on:
+      - mariadb
+    restart: always 
+    networks:
+      - inception_network
+    env_file:
+      - .env
+    secrets:
+      - mariadb_wordpress_password
+      - wordpress_author_password
+    volumes:
+      - volume_wordpress:/var/www/wordpress
+  mariadb:
+    build: ./requirements/mariadb
+    container_name: mariadb
+    image: mariadb
+    restart: always 
+    networks:
+      - inception_network
+    env_file:
+      - .env
+    secrets:
+      - mariadb_wordpress_password
+      - mariadb_root_password
+    volumes:
+      - volume_mariadb:/var/lib/mysql
+networks:
+  inception_network:
+    driver: bridge
+volumes:
+  volume_mariadb:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/mlahrach/data/mariadb
+  volume_wordpress:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/mlahrach/data/wordpress
+secrets:
+  mariadb_root_password:
+    file: ../secrets/mariadb_root_password.txt
+  mariadb_wordpress_password:
+    file: ../secrets/mariadb_wordpress_password.txt
+  wordpress_author_password:
+    file: ../secrets/wordpress_author_password.txt
