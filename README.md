@@ -6,6 +6,13 @@
 
 **Inception** is a system administration and DevOps project that focuses on containerization using Docker. The goal is to set up a complete web infrastructure composed of multiple Docker containers, each running a specific service. This project demonstrates the ability to architect, deploy, and manage a multi-service application stack using Docker Compose, with a focus on security, isolation, and best practices.
 
+**What is a Daemon?**
+​A daemon is a background process in an operating system that runs continuously, usually without direct interaction from a user. Its main job is to wait for requests, respond to them, or monitor and manage system resources.
+​what makes a daemon special is that it starts automatically, keeps running even when no user is logged in, and provides services to other programs not humans directly.
+​In MariaDB, the daemon is mysqld. It keeps running in the background, listening for SQL requests from clients (like wordpress, phpMyAdmin, or the sql CLI).
+​when a client sends a query (like SELECT, CREATE, or INSERT), the daemon receives it, processes it, and returns the result.
+​In Docker, the daemon is dockerd. It stays running in the background and responsible for creating, running, stopping, and managing containers. When you type commands like docker run or docker ps, you're not directly touching containers. Instead, you are sending a request to the Docker daemon, which does the real work.
+
 The infrastructure includes:
 - **NGINX** - Web server configured with TLS/SSL
 - **WordPress** - Content Management System with PHP-FPM
@@ -124,10 +131,14 @@ make re
 
 ### Accessing the Services
 
-- **Website**: https://mlahrach.42.fr
-- **WordPress Admin Panel**: https://mlahrach.42.fr/wp-admin
+- **Website**: https://mlahrach.42.fr - Regular users can access this. Think of it like going to any blog website (like Medium or WordPress.com); you just read content.
+- **WordPress Admin Panel**: https://mlahrach.42.fr/wp-admin - Special area for site administration. Administrators can log in here to manage the site, create posts, and change settings. They can read, write, and modify content.
   - Username: `mlahrach`
   - Password: stored in `secrets/mariadb_wordpress_password.txt`
+
+- **WordPress Author Panel**: https://mlahrach.42.fr/wp-admin - Area for authors to log in and create/edit their own posts.
+  - Username: `mohamed`
+  - Password: stored in `secrets/wordpress_author_password.txt`
 
 **Note**: Your browser will show a security warning because the SSL certificate is self-signed. Accept the warning to proceed.
 
@@ -147,6 +158,8 @@ make re
 - [Docker Secrets Management](https://docs.docker.com/engine/swarm/secrets/)
 - [PHP-FPM Configuration](https://www.php.net/manual/en/install.fpm.php)
 - [NGINX as Reverse Proxy](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
+### Youtube Videos
+- [Docker Tutorial Full Video in Arabic for 10 hours](https://youtu.be/PrusdhS2lmo)
 
 ### AI Usage
 
@@ -213,10 +226,286 @@ This project leverages **Docker** to create an isolated, reproducible environmen
 #### Design Decisions:
 
 - **Base Image**: Debian Bullseye chosen for stability and official support
-- **No Alpine**: While Alpine is smaller, Debian provides better compatibility with all required packages
+- **No Alpine**: While Alpine is smaller, Debian provides better compatibility with all required packages and I am more familiar with .deb distributions.
 - **PID 1 Compliance**: All services run their main process with `exec` to ensure proper signal handling
 - **Idempotent Scripts**: Setup scripts check for existing installations to avoid duplication
 - **Custom Network**: Bridge network allows container-to-container communication by name
+
+---
+
+## Understanding MariaDB Setup (Database Initialization)
+
+This section explains the database initialization process to demonstrate understanding of SQL operations and security practices.
+
+### **The Initialization Script**
+
+The MariaDB container uses a setup script that configures the database on first run. Here's the core SQL commands with detailed explanations:
+
+```bash
+# Read passwords from Docker secrets
+MARIADB_ROOT_PASSWORD="$(cat /run/secrets/mariadb_root_password)"
+MARIADB_WORDPRESS_PASSWORD="$(cat /run/secrets/mariadb_wordpress_password)"
+
+# Wait for MariaDB to be ready
+while ! mysqladmin ping ; do
+    sleep 2
+done
+
+# Set root password (only on first run)
+if [ "$first_time" = "1" ]; then
+  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_ROOT_PASSWORD}';"
+fi
+
+# Create database and user
+mysql -uroot -p"${MARIADB_ROOT_PASSWORD}" -e "CREATE DATABASE IF NOT EXISTS \`${MARIADB_DATABASE}\`;"
+mysql -uroot -p"${MARIADB_ROOT_PASSWORD}" -e "CREATE USER IF NOT EXISTS '${WORDPRESS_DB_USER}'@'%' IDENTIFIED BY '${MARIADB_WORDPRESS_PASSWORD}';"
+mysql -uroot -p"${MARIADB_ROOT_PASSWORD}" -e "GRANT ALL PRIVILEGES ON \`${MARIADB_DATABASE}\`.* TO '${WORDPRESS_DB_USER}'@'%';"
+mysql -uroot -p"${MARIADB_ROOT_PASSWORD}" -e "FLUSH PRIVILEGES;"
+```
+
+### **Command Breakdown:**
+
+#### **1. Reading Docker Secrets**
+```bash
+MARIADB_ROOT_PASSWORD="$(cat /run/secrets/mariadb_root_password)"
+MARIADB_WORDPRESS_PASSWORD="$(cat /run/secrets/mariadb_wordpress_password)"
+```
+
+| Component                          | Explanation                                                    |
+|------------------------------------|----------------------------------------------------------------|
+| `MARIADB_ROOT_PASSWORD=`           | Bash variable assignment                                       |
+| `"$(...)"`                         | Command substitution - runs command and stores output          |
+| `cat /run/secrets/mariadb_root_password` | Reads the Docker secret file                         |
+
+**What it does**: Reads passwords from Docker secrets (mounted as files) and stores them in bash variables.
+
+**Why needed**: Makes passwords available to subsequent commands while keeping them secure (not hardcoded).
+
+#### **2. Wait for MariaDB to be Ready**
+```bash
+while ! mysqladmin ping ; do
+    sleep 2
+done
+```
+
+| Component          | Explanation                                                    |
+|--------------------|----------------------------------------------------------------|
+| `while ! ... do`   | Loop that continues while condition is false                   |
+| `mysqladmin ping`  | Tests if MariaDB server is responding                          |
+| `!`                | Negation operator (true when ping fails)                       |
+| `sleep 2`          | Wait 2 seconds before trying again                             |
+
+**What it does**: Waits until MariaDB is fully started and accepting connections before running SQL commands.
+
+**Why needed**: MariaDB takes a few seconds to start. Without this, SQL commands would fail with "connection refused" errors.
+
+#### **3. The -e Flag (Execute Single Command)**
+```bash
+mysql -uroot -p"${MARIADB_ROOT_PASSWORD}" -e "SQL_COMMAND_HERE"
+```
+
+| Component                       | Explanation                                                    |
+|---------------------------------|----------------------------------------------------------------|
+| `mysql`                         | MySQL/MariaDB command-line client                              |
+| `-uroot`                        | Connect as 'root' user (no space after -u)                     |
+| `-p"${MARIADB_ROOT_PASSWORD}"`  | Password flag with variable (no space after -p)                |
+| `-e "SQL_COMMAND"`              | Execute a single SQL command and exit                          |
+
+**What it does**: Executes one SQL command non-interactively and exits.
+
+**Why use `-e` instead of heredoc**: Simpler for single commands, easier to debug individual steps, clearer error messages.
+
+#### **4. Idempotent First-Time Check**
+```bash
+if [ "$first_time" = "1" ]; then
+  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_ROOT_PASSWORD}';"
+fi
+```
+
+| Component                          | Explanation                                      |
+|------------------------------------|--------------------------------------------------|
+| `if [ "$first_time" = "1" ]`       | Checks if this is the first initialization       |
+| `ALTER USER 'root'@'localhost'`    | SQL command to modify root user                  |
+| `IDENTIFIED BY '...'`              | Sets/changes the password                        |
+
+**What it does**: On first run only, changes root password from empty to the secure password from Docker secrets.
+
+**Why check first_time**: MariaDB starts with no root password. After first run, root already has a password, so this command is skipped on subsequent runs.
+
+**Idempotent design**: The `.initialized` marker file (created at start) ensures root password is only set once.
+
+#### **5. CREATE DATABASE IF NOT EXISTS \`${MARIADB_DATABASE}\`;**
+
+| Part                  | Explanation                                                                         |
+|-----------------------|-------------------------------------------------------------------------------------|
+| `CREATE DATABASE`     | SQL command to create a new database                                                |
+| `IF NOT EXISTS`       | **Idempotent check**: Only create if doesn't exist (prevents errors on re-run)      |
+| `\`${MARIADB_DATABASE}\`` | Database name from environment variable (backticks escape special chars)        |
+| `;`                   | SQL statement terminator                                                            |
+
+**What it does**: Creates a database (typically named "wordpress") to store all WordPress tables (posts, users, comments, etc.).
+
+**Why backticks**: Protects database name from SQL injection and allows special characters.
+
+**Why needed**: WordPress requires a dedicated database to function. This separates WordPress data from MariaDB system tables.
+
+**Idempotent design**: Running this multiple times won't cause errors or duplicate databases.
+
+#### **6. CREATE USER IF NOT EXISTS '${WORDPRESS_DB_USER}'@'%' IDENTIFIED BY '${MARIADB_WORDPRESS_PASSWORD}';**
+
+| Part                              | Explanation                                                              |
+|-----------------------------------|--------------------------------------------------------------------------|
+| `CREATE USER`                     | SQL command to create a new database user account                        |
+| `IF NOT EXISTS`                   | Idempotent check (skip if user already exists)                           |
+| `'${WORDPRESS_DB_USER}'`          | Username from environment variable (typically "wordpress")               |
+| `@'%'`                            | **Host specification**: `%` = wildcard (any host can connect)            |
+| `IDENTIFIED BY`                   | Sets the password for this user                                          |
+| `'${MARIADB_WORDPRESS_PASSWORD}'` | Password read from Docker secret file                                    |
+
+**What it does**: Creates a database user that can connect from any container in the Docker network.
+
+**Security consideration**: `@'%'` allows connections from any host. This is safe because:
+- The database is isolated in a Docker network (not exposed to internet)
+- Only containers in `inception_network` can reach it
+- NGINX doesn't have access (only WordPress container does)
+
+**Why not `@'localhost'`**: WordPress container connects remotely (different container), not from localhost.
+
+#### **7. GRANT ALL PRIVILEGES ON \`${MARIADB_DATABASE}\`.* TO '${WORDPRESS_DB_USER}'@'%';**
+
+| Part                                | Explanation                                                                        |
+|-------------------------------------|------------------------------------------------------------------------------------|
+| `GRANT`                             | SQL command to assign permissions                                                  |
+| `ALL PRIVILEGES`                    | Full permissions (SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, etc.)              |
+| `ON \`${MARIADB_DATABASE}\`.*`      | Apply to specified database and all tables (`*`) inside it                         |
+| `TO '${WORDPRESS_DB_USER}'@'%'`     | Grant permissions to this specific user                                            |
+
+**What it does**: Gives the WordPress database user complete control over the WordPress database only.
+
+**Permission scope**:
+- ✅ Can read/write/delete data in `wordpress` database
+- ✅ Can create/drop tables in `wordpress` database
+- ❌ Cannot access other databases (like `mysql` system database)
+- ❌ Cannot create new users or modify global settings
+
+**Principle of least privilege**: WordPress user only has access to what it needs, not the entire MariaDB server.
+
+#### **8. FLUSH PRIVILEGES;**
+
+**What it does**: Tells MariaDB to reload the grant tables from the `mysql.user` and `mysql.db` tables into memory.
+
+**Why needed**: Changes to user privileges are cached. This command forces MariaDB to apply the changes immediately without restart.
+
+**Without this**: New permissions might not take effect until MariaDB restarts.
+
+---
+
+### **Additional Script Components**
+
+#### **9. Graceful Shutdown Before Production Mode**
+```bash
+mysqladmin -u root -p"${MARIADB_ROOT_PASSWORD}" shutdown
+```
+
+**What it does**: Shuts down the temporary MariaDB instance that was started with `service mariadb start`.
+
+**Why needed**: The script starts MariaDB temporarily to run initialization commands. After setup is complete, it needs to shut down cleanly before starting in production mode.
+
+**Prevents**: Data corruption, lock file conflicts, and ensures a clean state.
+
+#### **10. Start MariaDB in Foreground (PID 1)**
+```bash
+exec mysqld
+```
+
+| Component | Explanation                                                    |
+|-----------|----------------------------------------------------------------|
+| `exec`    | Replaces the shell process with `mysqld` (becomes PID 1)       |
+| `mysqld`  | MariaDB server daemon in foreground mode                       |
+
+**What it does**: Starts MariaDB as the main container process.
+
+**Why `exec`**: 
+- Makes `mysqld` PID 1 (required by Docker)
+- Allows proper signal handling (SIGTERM for graceful shutdown)
+- Container stops when `mysqld` stops
+
+**PID 1 requirement**: Docker sends signals to PID 1. Without `exec`, signals would go to the bash script instead of MariaDB.
+
+#### **11. Set -e (Error Handling)**
+```bash
+#!/bin/bash
+set -e
+```
+
+**What it does**: Exit immediately if any command fails (returns non-zero exit code).
+
+**Why critical**: Prevents the script from continuing with partial initialization if something fails (e.g., can't read secrets, MariaDB won't start).
+
+**Safety measure**: Ensures container fails visibly rather than running in broken state.
+
+#### **12. Ownership and Permissions**
+```bash
+chown -R mysql:mysql /var/run/mysqld
+chown -R mysql:mysql /var/lib/mysql
+```
+
+**What it does**: Sets correct ownership for MariaDB directories.
+
+**Why needed**: 
+- MariaDB runs as `mysql` user (not root) for security
+- The `mysql` user needs write permissions to create socket files and database files
+- Docker volumes may have wrong ownership initially
+
+---
+
+### **Security Architecture Explained**
+
+This setup implements a **two-tier security model**:
+
+```
+┌─────────────────────────────────────────┐
+│         MariaDB Container               │
+│                                         │
+│  ┌─────────────────────────────────┐   │
+│  │   root@localhost (full access)  │   │  ← Only accessible inside container
+│  │   Password: MARIADB_ROOT_PASSWORD│  │     Used for: admin tasks, backups
+│  └─────────────────────────────────┘   │
+│                                         │
+│  ┌─────────────────────────────────┐   │
+│  │   wordpress@% (limited access)  │   │  ← Accessible from WordPress container
+│  │   Password: MARIADB_WORDPRESS_  │   │     Used for: normal WordPress operations
+│  │             PASSWORD            │   │     Access: wordpress DB only
+│  └─────────────────────────────────┘   │
+│                                         │
+└─────────────────────────────────────────┘
+         ↑
+         │ Only WordPress container can connect
+         │ (via Docker network inception_network)
+```
+
+**Benefits:**
+1. **Separation of concerns**: Root password different from WordPress password
+2. **Blast radius limitation**: If WordPress is compromised, attacker only has access to `wordpress` database
+3. **Network isolation**: Database not exposed to host or internet
+4. **Password management**: Both passwords stored as Docker secrets (not in code)
+
+---
+
+### **Why This Approach (Not Copy-Paste)**
+
+**Understanding demonstrated:**
+1. **Idempotent design**: `IF NOT EXISTS` prevents errors on re-runs (professional practice)
+2. **Security layers**: Separate users with different privileges (defense in depth)
+3. **Network security**: Understanding `@'%'` is safe in Docker networks
+4. **Secret management**: Using Docker secrets instead of hardcoded passwords
+5. **Principle of least privilege**: WordPress user can't access system tables
+
+**Alternative approaches considered and rejected:**
+- ❌ Single root user for everything: Too dangerous, WordPress doesn't need root
+- ❌ Using environment variables: Less secure than Docker secrets
+- ❌ Manual initialization: Not reproducible, not idempotent
+- ✅ Automated, secure, idempotent script: Professional approach
 
 ---
 
@@ -224,16 +513,16 @@ This project leverages **Docker** to create an isolated, reproducible environmen
 
 ### 1. Virtual Machines vs Docker
 
-| Aspect | Virtual Machines | Docker Containers |
-|--------|-----------------|-------------------|
-| **Architecture** | Full OS with kernel, runs on hypervisor | Shares host kernel, isolated user space |
-| **Size** | GBs (includes entire OS) | MBs (only application + dependencies) |
-| **Startup Time** | Minutes (boot entire OS) | Seconds (start process only) |
-| **Resource Usage** | High overhead (CPU, RAM, storage) | Lightweight, minimal overhead |
-| **Isolation** | Complete isolation (hardware-level) | Process-level isolation |
-| **Portability** | Less portable (hypervisor-dependent) | Highly portable (runs anywhere with Docker) |
-| **Performance** | Native hardware performance | Near-native (slight container overhead) |
-| **Use Case** | Multiple OS types, strong isolation needs | Microservices, consistent environments |
+| Aspect             | Virtual Machines                         | Docker Containers                          |
+|--------------------|------------------------------------------|--------------------------------------------|
+| **Architecture**   | Full OS with kernel, runs on hypervisor  | Shares host kernel, isolated user space    |
+| **Size**           | GBs (includes entire OS)                 | MBs (only application + dependencies)      |
+| **Startup Time**   | Minutes (boot entire OS)                 | Seconds (start process only)               |
+| **Resource Usage** | High overhead (CPU, RAM, storage)        | Lightweight, minimal overhead              |
+| **Isolation**      | Complete isolation (hardware-level)      | Process-level isolation                    |
+| **Portability**    | Less portable (hypervisor-dependent)     | Highly portable (runs anywhere with Docker)|
+| **Performance**    | Native hardware performance              | Near-native (slight container overhead)    |
+| **Use Case**       | Multiple OS types, strong isolation needs| Microservices, consistent environments     |
 
 **Why Docker for this project?**
 - Faster deployment and iteration during development
@@ -245,14 +534,14 @@ This project leverages **Docker** to create an isolated, reproducible environmen
 
 ### 2. Secrets vs Environment Variables
 
-| Aspect | Docker Secrets | Environment Variables |
-|--------|---------------|----------------------|
-| **Storage** | Encrypted at rest, in-memory in container | Plain text in container environment |
-| **Visibility** | Only accessible to authorized services | Visible in `docker inspect`, logs, child processes |
-| **Security** | Designed for sensitive data (passwords, keys) | Not secure for sensitive information |
-| **Access** | Mounted as files in `/run/secrets/` | Available as env vars system-wide |
-| **Rotation** | Can be rotated without rebuilding | Requires container restart to update |
-| **Best For** | Passwords, API keys, certificates | Non-sensitive configuration data |
+| Aspect           | Docker Secrets                                | Environment Variables                              |
+|------------------|-----------------------------------------------|----------------------------------------------------|
+| **Storage**      | Encrypted at rest, in-memory in container     | Plain text in container environment                |
+| **Visibility**   | Only accessible to authorized services        | Visible in `docker inspect`, logs, child processes |
+| **Security**     | Designed for sensitive data (passwords, keys) | Not secure for sensitive information               |
+| **Access**       | Mounted as files in `/run/secrets/`           | Available as env vars system-wide                  |
+| **Rotation**     | Can be rotated without rebuilding             | Requires container restart to update               |
+| **Best For**     | Passwords, API keys, certificates             | Non-sensitive configuration data                   |
 
 **Why Secrets in this project?**
 - Passwords for MariaDB root and WordPress users
@@ -269,15 +558,15 @@ This project leverages **Docker** to create an isolated, reproducible environmen
 
 ### 3. Docker Network vs Host Network
 
-| Aspect | Docker Bridge Network | Host Network |
-|--------|----------------------|--------------|
-| **Isolation** | Containers isolated from host network | Containers share host network stack |
-| **IP Address** | Each container gets own IP | Containers use host IP directly |
-| **Port Mapping** | Requires port publishing (-p flag) | Ports directly bound to host |
-| **Security** | Better isolation, controlled exposure | Less isolation, all ports exposed |
-| **DNS Resolution** | Automatic service discovery by name | Must use host IP or external DNS |
-| **Performance** | Slight NAT overhead | No overhead (direct access) |
-| **Use Case** | Multi-container apps, isolation needed | Performance-critical apps, network tools |
+| Aspect              | Docker Bridge Network                      | Host Network                                |
+|---------------------|--------------------------------------------|---------------------------------------------|
+| **Isolation**       | Containers isolated from host network      | Containers share host network stack         |
+| **IP Address**      | Each container gets own IP                 | Containers use host IP directly             |
+| **Port Mapping**    | Requires port publishing (-p flag)         | Ports directly bound to host                |
+| **Security**        | Better isolation, controlled exposure      | Less isolation, all ports exposed           |
+| **DNS Resolution**  | Automatic service discovery by name        | Must use host IP or external DNS            |
+| **Performance**     | Slight NAT overhead                        | No overhead (direct access)                 |
+| **Use Case**        | Multi-container apps, isolation needed     | Performance-critical apps, network tools    |
 
 **Why Bridge Network in this project?**
 - **Service Discovery**: Containers communicate by name (e.g., `wordpress:9000`)
@@ -294,15 +583,15 @@ Host (443) → NGINX Container → WordPress Container (9000) → MariaDB Contai
 
 ### 4. Docker Volumes vs Bind Mounts
 
-| Aspect | Docker Volumes | Bind Mounts |
-|--------|---------------|-------------|
-| **Management** | Managed by Docker | User manages directory structure |
-| **Location** | Docker-managed path (`/var/lib/docker/volumes/`) | User-specified host path |
-| **Portability** | More portable across systems | Dependent on host filesystem |
-| **Permissions** | Docker handles permissions | Manual permission management needed |
-| **Backup** | Use Docker volume commands | Standard filesystem tools |
-| **Performance** | Optimized by Docker | Direct filesystem access |
-| **Use Case** | Persistent data, production | Development, direct file access |
+| Aspect           | Docker Volumes                                   | Bind Mounts                         |
+|------------------|--------------------------------------------------|-------------------------------------|
+| **Management**   | Managed by Docker                                | User manages directory structure    |
+| **Location**     | Docker-managed path (`/var/lib/docker/volumes/`) | User-specified host path            |
+| **Portability**  | More portable across systems                     | Dependent on host filesystem        |
+| **Permissions**  | Docker handles permissions                       | Manual permission management needed |
+| **Backup**       | Use Docker volume commands                       | Standard filesystem tools           |
+| **Performance**  | Optimized by Docker                              | Direct filesystem access            |
+| **Use Case**     | Persistent data, production                      | Development, direct file access     |
 
 **Why Bind Mounts in this project?**
 - **Data Location Control**: Data stored in `$HOME/data/` directory
@@ -325,13 +614,13 @@ Host (443) → NGINX Container → WordPress Container (9000) → MariaDB Contai
 
 **Volume Configuration:**
 ```yaml
-volumes:
-  volume_mariadb:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${HOME}/data/mariadb
+volumes:                           # "I'm defining storage"
+  volume_mariadb:                  # "Name it 'volume_mariadb'"
+    driver: local                  # "Store on this computer"
+    driver_opts:                   # "Here's how to do it:"
+      type: none                   # "No special filesystem type"
+      o: bind                      # "Use bind mount (direct folder connection)"
+      device: ${HOME}/data/mariadb # "Connect to this folder on my computer"
 ```
 
 This creates a named volume that uses bind mount underneath, combining benefits of both approaches. The `${HOME}` variable automatically expands to the current user's home directory.
@@ -420,12 +709,12 @@ $(USER)  # Automatically expands to evaluator's username
 
 #### **2. Cross-Platform Compatibility**
 
-| System | Home Directory | Works? |
-|--------|---------------|--------|
-| Linux (42 School) | `/home/username/` | ✅ Yes |
-| Ubuntu/Debian | `/home/username/` | ✅ Yes |
-| macOS | `/Users/username/` | ✅ Yes (after Docker file sharing) |
-| WSL2 | `/home/username/` | ✅ Yes |
+| System            | Home Directory      | Works?                             |
+|-------------------|---------------------|------------------------------------|
+| Linux (42 School) | `/home/username/`   | ✅ Yes                             |
+| Ubuntu/Debian     | `/home/username/`   | ✅ Yes                             |
+| macOS             | `/Users/username/`  | ✅ Yes (after Docker file sharing) |
+| WSL2              | `/home/username/`   | ✅ Yes                             |
 
 #### **3. Idempotent Execution**
 

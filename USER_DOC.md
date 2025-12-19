@@ -613,23 +613,23 @@ docker exec -it nginx /bin/bash
 
 ### Essential Commands
 
-| Task | Command |
-|------|---------|
-| Start services | `make` |
-| Stop services | `make down` |
-| View running containers | `docker ps` |
-| View logs | `docker logs [container_name]` |
-| Access website | https://mlahrach.42.fr |
-| Access admin panel | https://mlahrach.42.fr/wp-admin |
-| Backup data | `cp -r $HOME/data $HOME/backup/` |
+| Task                     | Command                              |
+|--------------------------|--------------------------------------|
+| Start services           | `make`                               |
+| Stop services            | `make down`                          |
+| View running containers  | `docker ps`                          |
+| View logs                | `docker logs [container_name]`       |
+| Access website           | https://mlahrach.42.fr               |
+| Access admin panel       | https://mlahrach.42.fr/wp-admin      |
+| Backup data              | `cp -r $HOME/data $HOME/backup/`     |
 
 ### Default Credentials
 
-| Service | Username | Password Location |
-|---------|----------|-------------------|
-| WordPress Admin | mlahrach | `secrets/mariadb_wordpress_password.txt` |
-| WordPress Author | mohamed | `secrets/wordpress_author_password.txt` |
-| Database Root | root | `secrets/mariadb_root_password.txt` |
+| Service          | Username | Password Location                            |
+|------------------|----------|----------------------------------------------|
+| WordPress Admin  | mlahrach | `secrets/mariadb_wordpress_password.txt`     |
+| WordPress Author | mohamed  | `secrets/wordpress_author_password.txt`      |
+| Database Root    | root     | `secrets/mariadb_root_password.txt`          |
 
 ---
 
