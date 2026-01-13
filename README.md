@@ -36,6 +36,23 @@ This project is designed to work **on any machine without modification**, ensuri
   sudo chown -R $(USER) $(HOME)/data/  # Uses YOUR username
   ```
 
+**Note about `mkdir -p`**
+
+The Makefile uses `mkdir -p` to create the data directories. The `-p` (parents) flag ensures parent directories are created as needed and the command won't fail if the directory already exists. This makes setup idempotent and safe to run multiple times.
+
+Examples:
+
+```bash
+mkdir -p $(HOME)/data/mariadb
+mkdir -p $(HOME)/data/wordpress
+# create both at once
+mkdir -p $(HOME)/data/{mariadb,wordpress}
+# verbose output
+mkdir -pv $(HOME)/data/{mariadb,wordpress}
+```
+
+If you encounter permission errors when creating directories in another user's home or system paths, run the command with `sudo` only when appropriate.
+
 - **docker-compose.yml**: Uses `${HOME}` variable
   ```yaml
   volumes:
